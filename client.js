@@ -274,6 +274,8 @@ function startGame() {
         return;
     }
 
+    // ... (lines inside startGame function)
+
     // 3. Assign Roles
     const rolesArray = [];
     for (const [role, count] of Object.entries(config)) {
@@ -281,7 +283,20 @@ function startGame() {
             rolesArray.push(role);
         }
     }
+
+    // --- START FIX ---
+    // If there are fewer roles than players, fill the remaining slots with Villagers
+    while (rolesArray.length < totalPlayers) {
+        rolesArray.push('Villager');
+    }
+    // --- END FIX ---
+
+    // Shuffle the array of roles
     window.shuffleArray(rolesArray);
+
+    // 4. Update Game State
+    const updates = {
+    // ... (rest of the code to assign roles and start the game)
 
     const assignedRoles = {};
     gameState.players.forEach((player, index) => {
