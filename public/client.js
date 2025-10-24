@@ -4,6 +4,17 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, addDo
 import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 
+// --- HELPER FUNCTION: generateRandomCode ---
+// Moving this here ensures it's defined and in scope 
+// before it's called by createLobby().
+function generateRandomCode(length = 6) {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < length; i++) {
+        code += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    return code;
+}
 const appId = 'shadows-and-lies-live'; // This is a unique identifier...
 const initialAuthToken = null; // Correct for Anonymous Auth
         
@@ -787,14 +798,6 @@ function getLobbyPath(code) {
 }
 function getActionPath(code, dayNum, playerId) {
     return `/artifacts/${appId}/public/data/actions/${code}/Night_${dayNum}/${playerId}`;
-}
-function generateRandomCode(length) {
-    let result = '';
-    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    for (let i = 0; i < length; i++) {
-        result += characters.charAt(Math.floor(Math.random() * characters.length));
-    }
-    return result;
 }
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
