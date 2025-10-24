@@ -1,89 +1,112 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Welcome to Firebase Hosting</title>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shadows & Lies | Mafia Game</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script type="module" src="client.js" defer></script>
 
-    <!-- update the version number as needed -->
-    <script defer src="/__/firebase/12.4.0/firebase-app-compat.js"></script>
-    <!-- include only the Firebase features as you need -->
-    <script defer src="/__/firebase/12.4.0/firebase-auth-compat.js"></script>
-    <script defer src="/__/firebase/12.4.0/firebase-database-compat.js"></script>
-    <script defer src="/__/firebase/12.4.0/firebase-firestore-compat.js"></script>
-    <script defer src="/__/firebase/12.4.0/firebase-functions-compat.js"></script>
-    <script defer src="/__/firebase/12.4.0/firebase-messaging-compat.js"></script>
-    <script defer src="/__/firebase/12.4.0/firebase-storage-compat.js"></script>
-    <script defer src="/__/firebase/12.4.0/firebase-analytics-compat.js"></script>
-    <script defer src="/__/firebase/12.4.0/firebase-remote-config-compat.js"></script>
-    <script defer src="/__/firebase/12.4.0/firebase-performance-compat.js"></script>
-    <!-- 
-      initialize the SDK after all desired features are loaded, set useEmulator to false
-      to avoid connecting the SDK to running emulators.
-    -->
-    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
 
-    <style media="screen">
-      body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
-      #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
-      #message h2 { color: #ffa100; font-weight: bold; font-size: 16px; margin: 0 0 8px; }
-      #message h1 { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.6); margin: 0 0 16px;}
-      #message p { line-height: 140%; margin: 16px 0 24px; font-size: 14px; }
-      #message a { display: block; text-align: center; background: #039be5; text-transform: uppercase; text-decoration: none; color: white; padding: 16px; border-radius: 4px; }
-      #message, #message a { box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
-      #load { color: rgba(0,0,0,0.4); text-align: center; font-size: 13px; }
-      @media (max-width: 600px) {
-        body, #message { margin-top: 0; background: white; box-shadow: none; }
-        body { border-top: 16px solid #ffa100; }
-      }
-    </style>
-  </head>
-  <body>
-    <div id="message">
-      <h2>Welcome</h2>
-      <h1>Firebase Hosting Setup Complete</h1>
-      <p>You're seeing this because you've successfully setup Firebase Hosting. Now it's time to go build something extraordinary!</p>
-      <a target="_blank" href="https://firebase.google.com/docs/hosting/">Open Hosting Documentation</a>
+  <style>
+    body {
+      background: radial-gradient(ellipse at top, #0b0b0f 0%, #000 100%);
+      color: #f1f1f1;
+      font-family: "Poppins", sans-serif;
+    }
+    .glass {
+      background: rgba(30, 30, 30, 0.6);
+      border: 1px solid rgba(255, 215, 0, 0.15);
+      box-shadow: 0 0 30px rgba(255, 215, 0, 0.08);
+      backdrop-filter: blur(20px);
+    }
+    .gold-glow {
+      color: #ffd85b;
+      text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+    }
+    .btn-gold {
+      background: transparent;
+      border: 1px solid rgba(255, 215, 0, 0.4);
+      color: #ffd85b;
+      font-weight: 600;
+      transition: 0.3s;
+    }
+    .btn-gold:hover {
+      background: rgba(255, 215, 0, 0.1);
+      box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+    }
+  </style>
+</head>
+
+<body class="flex items-center justify-center min-h-screen">
+
+  <!-- Landing Screen -->
+  <div id="landing-screen" class="glass p-10 rounded-2xl w-[380px] text-center hidden">
+    <h1 class="text-4xl font-extrabold gold-glow mb-2">SHADOWS & LIES</h1>
+    <p class="text-gray-400 mb-6 italic">A Game of Wits and Betrayal</p>
+
+    <input id="player-name" type="text" placeholder="Enter your name" 
+           class="w-full p-2 rounded bg-transparent border border-gray-500 mb-3 text-center text-white" />
+
+    <input id="room-code" type="text" placeholder="Room Code (Optional)" 
+           class="w-full p-2 rounded bg-transparent border border-gray-500 mb-5 text-center text-white" />
+
+    <div class="flex justify-center gap-4">
+      <button id="host-btn" class="btn-gold px-4 py-2 rounded-md" onclick="handleLobbyAction('create')" disabled>
+        <i data-lucide="crown"></i> Host Game
+      </button>
+      <button id="join-btn" class="btn-gold px-4 py-2 rounded-md" onclick="handleLobbyAction('join')" disabled>
+        <i data-lucide="key"></i> Join Game
+      </button>
     </div>
-    <p id="load">Firebase SDK Loading&hellip;</p>
+  </div>
 
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const loadEl = document.querySelector('#load');
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-        // // The Firebase SDK is initialized and available here!
-        //
-        // firebase.auth().onAuthStateChanged(user => { });
-        // firebase.database().ref('/path/to/ref').on('value', snapshot => { });
-        // firebase.firestore().doc('/foo/bar').get().then(() => { });
-        // firebase.functions().httpsCallable('yourFunction')().then(() => { });
-        // firebase.messaging().requestPermission().then(() => { });
-        // firebase.storage().ref('/path/to/ref').getDownloadURL().then(() => { });
-        // firebase.analytics(); // call to activate
-        // firebase.analytics().logEvent('tutorial_completed');
-        // firebase.performance(); // call to activate
-        //
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+  <!-- Lobby Screen -->
+  <div id="lobby-screen" class="glass p-8 rounded-2xl w-[500px] text-center hidden">
+    <h2 class="text-2xl font-bold gold-glow mb-3">Game Lobby</h2>
+    <p id="room-display" class="text-gray-400 mb-4">Room Code: ...</p>
+    <div id="player-list" class="bg-black/30 p-3 rounded-lg h-[160px] overflow-y-auto mb-4 text-sm"></div>
 
-        try {
-          let app = firebase.app();
-          let features = [
-            'auth', 
-            'database', 
-            'firestore',
-            'functions',
-            'messaging', 
-            'storage', 
-            'analytics', 
-            'remoteConfig',
-            'performance',
-          ].filter(feature => typeof app[feature] === 'function');
-          loadEl.textContent = `Firebase SDK loaded with ${features.join(', ')}`;
-        } catch (e) {
-          console.error(e);
-          loadEl.textContent = 'Error loading the Firebase SDK, check the console.';
-        }
+    <button id="start-game-btn" class="btn-gold px-4 py-2 rounded-md">
+      <i data-lucide="play"></i> Start Game
+    </button>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="game-screen" class="hidden flex flex-col items-center text-center w-full max-w-2xl glass p-10 rounded-2xl">
+    <h2 class="text-3xl font-bold gold-glow mb-4">Game in Progress</h2>
+    <p id="phase-display" class="text-gray-300 mb-2 italic">Waiting for others...</p>
+
+    <div id="player-status" class="grid grid-cols-3 gap-2 w-full mb-5"></div>
+
+    <div id="chat-box" class="bg-black/30 w-full p-4 rounded-lg mb-4 h-[200px] overflow-y-auto text-left text-sm"></div>
+    <div class="flex w-full gap-2">
+      <input id="chat-input" type="text" placeholder="Type a message..." 
+             class="flex-grow p-2 rounded bg-transparent border border-gray-600 text-white" />
+      <button id="send-chat-btn" class="btn-gold px-4 py-2 rounded-md"><i data-lucide="send"></i></button>
+    </div>
+  </div>
+
+  <!-- Loading Screen -->
+  <div id="loading-screen" class="absolute inset-0 flex flex-col items-center justify-center bg-black text-gray-400">
+    <div class="animate-pulse text-lg">Connecting to Firebase...</div>
+  </div>
+
+  <script>
+    // Disable until Firebase auth ready
+    document.querySelectorAll('#host-btn, #join-btn').forEach(b => b.disabled = true);
+
+    document.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      window.addEventListener('firebaseReady', () => {
+        document.querySelectorAll('#host-btn, #join-btn').forEach(b => b.disabled = false);
+        document.getElementById('loading-screen').classList.add('hidden');
+        document.getElementById('landing-screen').classList.remove('hidden');
       });
-    </script>
-  </body>
+    });
+  </script>
+</body>
 </html>
