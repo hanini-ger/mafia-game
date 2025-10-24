@@ -859,6 +859,17 @@ window.getLobbyRef = getLobbyRef;
 window.getActionRef = getActionRef;
 window.shuffleArray = shuffleArray;
 window.getActionVerb = getActionVerb;
+window.generateRandomCode = generateRandomCode;
+
+function generateRandomCode(length) {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let result = '';
+    const charactersLength = characters.length;
+    for (let i = 0; i < length; i++) {
+        result += characters.charAt(Math.floor(Math.random() * charactersLength));
+    }
+    return result;
+}
 
 function shuffleArray(array) {
     for (let i = array.length - 1; i > 0; i--) {
