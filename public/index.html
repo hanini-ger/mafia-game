@@ -95,7 +95,23 @@
                                 </div>
                             </div>
                         </div>
-                        
+
+                        <div id="lobby-chat-panel" class="space-y-4 hidden">
+                            <h3 class="text-xl font-semibold border-l-4 border-white/50 pl-3 text-white/80">
+                                <i data-lucide="message-square" class="w-5 h-5 inline-block mr-1"></i> Pre-Game Chat
+                            </h3>
+
+                            <div id="lobby-chat-messages" class="h-40 overflow-y-auto space-y-3 p-2 bg-black/10 rounded border border-white/10 mb-4">
+                                </div>
+
+                            <div class="flex">
+                                <input type="text" id="public-chat-input-lobby" placeholder="Say hello to the group..." 
+                                       class="flex-1 p-3 rounded-l bg-white/10 border border-white/20 outline-none text-sm">
+                                <button onclick="sendMessage('public', 'public-chat-input-lobby')" class="p-3 rounded-r bg-[#4acbff] text-black font-semibold hover:bg-[#3498db] transition duration-300">
+                                    Send
+                                </button>
+                            </div>
+                        </div>
                         <button id="start-game-button" class="w-full btn-gold-accent rounded p-3 text-xl font-bold mt-6 hidden-non-host"
                                 onclick="startGame()">
                             START GAME
@@ -114,7 +130,7 @@
             </div>
         </div>
 
-        <div id="game-screen" class="hidden h-[90vh] flex flex-col theme-night">
+        <div id="game-screen" class="hidden min-h-screen flex flex-col theme-night">
             
             <div class="game-header p-3 flex justify-between items-center rounded-t-lg shadow-xl"
                  style="background-color: var(--phase-color); color: var(--phase-text);">
@@ -124,6 +140,10 @@
                 <div class="flex items-center space-x-4 font-semibold">
                     <span id="phase-display" class="text-lg flex items-center">
                         <i data-lucide="moon" class="w-5 h-5 mr-1"></i> Phase: Night 1
+                    </span>
+                    <span id="host-timer-container" class="text-sm font-normal text-white/70 hidden">
+                        <i data-lucide="clock" class="w-4 h-4 inline-block mr-1"></i>
+                        <span id="host-timer-display"></span>
                     </span>
                 </div>
             </div>
@@ -154,7 +174,7 @@
                                 <i data-lucide="message-square" class="w-5 h-5 inline-block mr-1"></i> Public Discussion
                             </h3>
 
-                            <div id="public-chat" class="flex-1 overflow-y-auto space-y-3 p-2 bg-black/10 rounded mb-4">
+                            <div id="public-chat-messages" class="flex-1 overflow-y-auto space-y-3 p-2 bg-black/10 rounded mb-4">
                                 </div>
 
                             <div class="flex">
@@ -197,8 +217,8 @@
                                 <button id="submit-vote-btn" class="w-full btn-gold-accent rounded p-3 text-lg font-bold" disabled onclick="submitVote()">
                                     SUBMIT VOTE
                                 </button>
-                                <button id="tally-votes-btn" class="w-full btn-gold-accent rounded p-3 text-lg font-bold mt-2 hidden-non-host" onclick="tallyVotes()">
-                                    HOST: Tally Votes & Advance to Night
+                                <button id="tally-votes-btn" class="w-full btn-gold-accent rounded p-3 text-lg font-bold mt-2 hidden-non-host" onclick="advancePhase()">
+                                    HOST: Tally Votes & Advance Phase
                                 </button>
                             </div>
                         </div>

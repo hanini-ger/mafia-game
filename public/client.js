@@ -1,4 +1,4 @@
-// client.js (fixed version)
+// client.js (Fixed Version)
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -37,6 +37,12 @@ let gameState = {
 let myRole = { name: 'Villager', alignment: 'Town' };
 let selectedTargetId = null; // For Night Action / Day Vote
 
+// --- PHASE TIMER VARIABLES ---
+let phaseTimer = null;
+const NIGHT_DURATION = 60; // 60 seconds for Night (Host Only)
+const DAY_DURATION = 120;  // 120 seconds for Day (Host Only)
+let currentPhaseTimeLeft = 0;
+
 // --- GAME CONSTANTS ---
 const ALL_ROLES = {
     // Mafia Roles
@@ -63,6 +69,54 @@ const INITIAL_ROLE_CONFIG = {
     'Mayor': 0, 'Granny': 0, 'Tough Guy': 0, 'Villager': 2,
     'Creeper': 0,
 };
+
+// --- TIMER MANAGEMENT (HOST ONLY) ---
+function startPhaseTimer(duration) {
+    if (!isHost) return;
+
+    // Clear any existing timer
+    if (phaseTimer) clearInterval(phaseTimer);
+    phaseTimer = null; // Ensure it's reset
+
+    currentPhaseTimeLeft = duration;
+    const isDay = gameState.phase === 'DAY';
+    const hostTimerEl = document.getElementById('host-timer-display');
+    const tallyBtn = document.getElementById('tally-votes-btn');
+    
+    if (!hostTimerEl) return;
+    
+    // Show timer only to host
+    const hostTimerContainer = document.getElementById('host-timer-container');
+    if (hostTimerContainer) hostTimerContainer.classList.remove('hidden');
+
+    function updateTimer() {
+        const minutes = Math.floor(currentPhaseTimeLeft / 60);
+        const seconds = currentPhaseTimeLeft % 60;
+        hostTimerEl.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+
+        if (currentPhaseTimeLeft <= 0) {
+            clearInterval(phaseTimer);
+            phaseTimer = null;
+            hostTimerEl.textContent = "Time Up! Processing...";
+            if (tallyBtn) tallyBtn.disabled = true;
+
+            if (isDay) {
+                // Time up for Day -> Tally Votes
+                tallyVotes();
+            } else {
+                // Time up for Night -> Process Night Actions
+                processNightActions();
+            }
+        } else {
+            currentPhaseTimeLeft--;
+        }
+    }
+
+    // Run immediately and then every second
+    if (tallyBtn) tallyBtn.disabled = false;
+    updateTimer();
+    phaseTimer = setInterval(updateTimer, 1000);
+}
 
 // --- FIREBASE INITIALIZATION & AUTH ---
 function initFirebase() {
@@ -187,7 +241,7 @@ function handleLobbyAction(action) {
         } else {
             if (codeInput) {
                 codeInput.classList.add('border-red-500');
-                setTimeout(() => codeInput.classList.remove('border-red-500'), 1500);
+                setTimeout(() => codeInput.placeholder = "Room Code (Optional, for Joining)", 2000);
             }
         }
     }
@@ -289,6 +343,25 @@ function listenToLobby(code) {
             if (gameState.phase !== 'LOBBY' && document.getElementById('game-screen').classList.contains('hidden')) {
                 window.switchScreen('game-screen');
             }
+            
+            // HOST-ONLY: Manage Phase Timer/Auto-Advance
+            if (isHost && gameState.dayNum > 0) {
+                // If the phase has changed from the one the timer was running for, start a new one.
+                if (phaseTimer === null || (gameState.phase === 'NIGHT' && currentPhaseTimeLeft <= 0) || (gameState.phase === 'DAY' && currentPhaseTimeLeft <= 0)) {
+                    if (gameState.phase === 'NIGHT') {
+                        startPhaseTimer(NIGHT_DURATION);
+                    } else if (gameState.phase === 'DAY') {
+                        startPhaseTimer(DAY_DURATION);
+                    }
+                }
+            } else if (phaseTimer) {
+                // If not in game phase (LOBBY/END) or not host, clear timer
+                clearInterval(phaseTimer);
+                phaseTimer = null;
+                const hostTimerContainer = document.getElementById('host-timer-container');
+                if (hostTimerContainer) hostTimerContainer.classList.add('hidden');
+            }
+
 
         } else {
             console.log("Lobby dissolved or left.");
@@ -388,14 +461,105 @@ async function submitNightAction() {
     }
 }
 
+async function processNightActions() {
+    if (!isHost || gameState.phase !== 'NIGHT') return;
+
+    try {
+        // --- 1. Fetch ALL submitted actions for the night ---
+        const actionsCollection = collection(db, 'artifacts', appId, 'actions', lobbyCode, 'nights', `Night_${gameState.dayNum}`);
+        const actionsSnapshot = await getDocs(actionsCollection);
+        const submittedActions = actionsSnapshot.docs.map(doc => doc.data());
+
+        // --- 2. Determine who was targeted by what ---
+        let kills = {}; // {targetId: [performerRole, ...]}
+        let heals = {}; // {targetId: [performerRole, ...]}
+        let actionLog = [];
+        let deathTarget = null;
+        
+        submittedActions.forEach(action => {
+            if (action.performerRole === 'Godfather' || action.performerRole === 'Mafioso') {
+                kills[action.targetId] = (kills[action.targetId] || []).concat(action.performerRole);
+            } else if (action.performerRole === 'Doctor') {
+                heals[action.targetId] = (heals[action.targetId] || []).concat(action.performerRole);
+            }
+            // Add logic for Detective, Jailer, etc. here if needed for public log
+        });
+
+        // --- 3. Process the Mafia Kill and Doctor Heal (Simplified) ---
+        // Find the player with the most kills (simple approach for multiple mafia)
+        const killTargetId = Object.keys(kills).sort((a, b) => kills[b].length - kills[a].length)[0];
+
+        if (killTargetId) {
+            const isHealed = heals[killTargetId] && heals[killTargetId].length > 0;
+            
+            if (!isHealed) {
+                deathTarget = killTargetId;
+            } else {
+                actionLog.push({ type: 'info', message: `${gameState.players.find(p => p.id === killTargetId)?.alias || 'A player'} was attacked but saved by a Doctor!` });
+            }
+        }
+
+        // --- 4. Update Player Status and Log ---
+        let updatedPlayers = gameState.players;
+        let nightReport = [...actionLog]; // Start with non-death events
+
+        if (deathTarget) {
+            // Kill happened: update status
+            updatedPlayers = updatedPlayers.map(p =>
+                p.id === deathTarget ? { ...p, status: 'dead', vote: null } : p
+            );
+            const targetRoleName = gameState.roles && gameState.roles[deathTarget] ? gameState.roles[deathTarget] : 'Unknown';
+            const deathTargetAlias = gameState.players.find(p => p.id === deathTarget)?.alias || 'Unknown';
+            const deathMessage = `${deathTargetAlias}, the ${targetRoleName}, was killed during the night!`;
+            nightReport.push({ type: 'death', message: deathMessage });
+        } else {
+            nightReport.push({ type: 'info', message: 'The night passed peacefully. No one was killed.' });
+        }
+
+        // --- 5. Advance Phase ---
+        const lobbyRef = getLobbyRef(lobbyCode);
+        
+        // Log all night events, then advance
+        await updateDoc(lobbyRef, {
+            players: updatedPlayers,
+            log: arrayUnion(...nightReport),
+        });
+
+        // Advance to Day
+        let nextPhase = 'DAY';
+        let nextDayNum = gameState.dayNum;
+        let logMessage = `It is now Day ${nextDayNum}. Discussion begins.`;
+
+        await updateDoc(getLobbyRef(lobbyCode), {
+            phase: nextPhase,
+            dayNum: nextDayNum,
+            log: arrayUnion({ type: 'info', message: logMessage }),
+            chat: { public: [], mafia: [] },
+            players: updatedPlayers.map(p => ({ ...p, vote: null }))
+        }).catch(e => console.error('Error advancing phase after night:', e));
+
+
+    } catch (e) {
+        console.error("Error processing night actions: ", e);
+    }
+}
+
 async function tallyVotes() {
     if (!isHost || gameState.phase !== 'DAY' || gameState.dayNum === 0) return;
+
+    // Clear the timer immediately when votes are tallied
+    if (phaseTimer) clearInterval(phaseTimer); phaseTimer = null;
 
     try {
         // Fetch current votes
         const votes = (gameState.players || []).filter(p => p.vote && p.vote !== 'abstain' && p.status === 'alive').map(p => p.vote);
         const voteCounts = votes.reduce((acc, id) => {
             acc[id] = (acc[id] || 0) + 1;
+            // Mayor check: If the voter is a Mayor, count their vote twice
+            const voter = gameState.players.find(p => p.vote === id && gameState.roles[p.id] === 'Mayor');
+            if(voter) {
+                acc[id] += 1;
+            }
             return acc;
         }, {});
 
@@ -403,32 +567,33 @@ async function tallyVotes() {
 
         const totalAlive = (gameState.players || []).filter(p => p.status === 'alive').length;
 
+        let lynchMessage = '';
+        let updatedPlayers = gameState.players;
+
         if (sortedVotes.length > 0 && sortedVotes[0][1] > totalAlive / 2) {
             const lynchTargetId = sortedVotes[0][0];
             const lynchTarget = gameState.players.find(p => p.id === lynchTargetId);
 
             // Update status of the killed player
-            const updatedPlayers = (gameState.players || []).map(p =>
+            updatedPlayers = (gameState.players || []).map(p =>
                 p.id === lynchTargetId ? { ...p, status: 'dead', vote: null } : p
             );
 
             const targetRoleName = gameState.roles && gameState.roles[lynchTargetId] ? gameState.roles[lynchTargetId] : 'Unknown';
-            const message = `${lynchTarget.alias}, the ${targetRoleName}, was lynched!`;
-
-            await updateDoc(getLobbyRef(lobbyCode), {
-                players: updatedPlayers,
-                log: arrayUnion({ type: 'lynch', message: message }),
-            });
+            lynchMessage = `${lynchTarget.alias}, the ${targetRoleName}, was lynched!`;
 
         } else {
-            const message = 'No one was lynched today. The village is confused.';
-            await updateDoc(getLobbyRef(lobbyCode), {
-                log: arrayUnion({ type: 'lynch', message: message }),
-            });
+            lynchMessage = 'No one was lynched today. The village is confused.';
         }
 
-        // Advance to next phase
-        await window.advancePhase();
+        // Advance to next phase (Night)
+        await updateDoc(getLobbyRef(lobbyCode), {
+            players: updatedPlayers,
+            log: arrayUnion({ type: 'lynch', message: lynchMessage }),
+            phase: 'NIGHT',
+            dayNum: gameState.dayNum + 1,
+            chat: { public: [], mafia: [] },
+        });
 
     } catch (e) {
         console.error("Error tallying votes: ", e);
@@ -437,19 +602,26 @@ async function tallyVotes() {
 
 async function advancePhase() {
     if (!isHost) return;
-
-    let nextPhase = gameState.phase === 'NIGHT' ? 'DAY' : 'NIGHT';
-    let nextDayNum = nextPhase === 'NIGHT' ? gameState.dayNum + 1 : gameState.dayNum;
-    let logMessage = nextPhase === 'NIGHT' ? `It is now Night ${nextDayNum}.` : `It is now Day ${nextDayNum}. Discussion begins.`;
+    
+    // Clear any existing timer
+    if (phaseTimer) clearInterval(phaseTimer); phaseTimer = null;
 
     if (gameState.phase === 'NIGHT') {
-        // For demo: record night report
-        const resultsMessage = "The night passed without incident. Night actions (kill/heal/investigate) were carried out.";
-        // append to lobby log
-        await updateDoc(getLobbyRef(lobbyCode), {
-            log: arrayUnion({ type: 'night-report', message: resultsMessage })
-        }).catch(e => console.error('Error logging night results:', e));
+        // Host manually ends night early. Process actions immediately.
+        await processNightActions(); 
+        return;
     }
+
+    if (gameState.phase === 'DAY') {
+        // Host manually ends day early. Tally votes immediately.
+        await tallyVotes(); 
+        return;
+    }
+    
+    // Handle manual advance from LOBBY or END phase (shouldn't happen often)
+    let nextPhase = gameState.phase === 'LOBBY' ? 'NIGHT' : 'LOBBY';
+    let nextDayNum = nextPhase === 'NIGHT' ? 1 : 0;
+    let logMessage = nextPhase === 'NIGHT' ? `It is now Night ${nextDayNum}.` : `Game reset to lobby.`;
 
     await updateDoc(getLobbyRef(lobbyCode), {
         phase: nextPhase,
@@ -463,8 +635,11 @@ async function advancePhase() {
 }
 
 // --- CHAT MANAGEMENT ---
-function sendMessage(channel) {
-    const inputId = channel === 'public' ? 'public-chat-input' : 'mafia-chat-input';
+function sendMessage(channel, inputIdOverride) {
+    const defaultInputId = channel === 'public' ? 'public-chat-input' : 'mafia-chat-input';
+    // Use the override ID if provided (for lobby chat), otherwise use the default
+    const inputId = inputIdOverride || defaultInputId; 
+    
     const chatInput = document.getElementById(inputId);
     const messageText = chatInput ? chatInput.value.trim() : '';
 
@@ -478,7 +653,7 @@ function sendMessage(channel) {
     };
 
     try {
-        const chatField = `chat.${channel}`;
+        const chatField = `chat.${channel === 'lobby-public' ? 'public' : channel}`; // Always write to 'public' channel for lobby/day
         updateDoc(getLobbyRef(lobbyCode), {
             [chatField]: arrayUnion(newMessage)
         });
@@ -499,15 +674,27 @@ function renderUI() {
     isHost = gameState.hostId === userId;
 
     // 1. Lobby Host Controls Visibility
-    if (isHost && gameState.phase === 'LOBBY') {
-        document.querySelectorAll('.hidden-non-host').forEach(el => el.classList.remove('hidden'));
-        const waiting = document.getElementById('waiting-host-message');
-        if (waiting) waiting.classList.add('hidden');
-        renderRoleConfig();
-    } else if (gameState.phase === 'LOBBY') {
-        document.querySelectorAll('.hidden-non-host').forEach(el => el.classList.add('hidden'));
-        const waiting = document.getElementById('waiting-host-message');
-        if (waiting) waiting.classList.remove('hidden');
+    const waiting = document.getElementById('waiting-host-message');
+    const lobbyChatPanel = document.getElementById('lobby-chat-panel');
+
+    if (gameState.phase === 'LOBBY') {
+        if (isHost) {
+            document.querySelectorAll('.hidden-non-host').forEach(el => el.classList.remove('hidden'));
+            if (waiting) waiting.classList.add('hidden');
+            renderRoleConfig();
+        } else {
+            document.querySelectorAll('.hidden-non-host').forEach(el => el.classList.add('hidden'));
+            if (waiting) waiting.classList.remove('hidden');
+        }
+        
+        // LOBBY CHAT: Show chat panel
+        if (lobbyChatPanel) lobbyChatPanel.classList.remove('hidden');
+        renderChat('lobby-public', (gameState.chat && gameState.chat.public) ? gameState.chat.public : []);
+
+
+    } else {
+        // Phase is DAY/NIGHT/END: Hide lobby chat panel
+        if (lobbyChatPanel) lobbyChatPanel.classList.add('hidden');
     }
 
     // 2. Player List (Lobby & Game)
@@ -516,11 +703,11 @@ function renderUI() {
     // 3. Game Screen UI updates
     if (gameState.phase !== 'LOBBY') {
         const theme = gameState.phase === 'DAY' ? 'theme-day' : 'theme-night';
-        const icon = gameState.phase === 'DAY' ? 'sun' : 'moon';
         const phaseText = gameState.phase === 'DAY' ? `Day ${gameState.dayNum}` : `Night ${gameState.dayNum}`;
 
         const gameScreen = document.getElementById('game-screen');
-        if (gameScreen) gameScreen.className = `h-[90vh] flex flex-col ${theme}`;
+        // FIX: Change h-[90vh] to min-h-screen for full coverage
+        if (gameScreen) gameScreen.className = `min-h-screen flex flex-col ${theme}`;
         safeSetText('phase-display', `Phase: ${phaseText}`);
 
         // Update Role Card
@@ -546,7 +733,16 @@ function renderUI() {
         if (votingPanel) votingPanel.classList.toggle('hidden', gameState.phase !== 'DAY');
 
         const tallyBtn = document.getElementById('tally-votes-btn');
-        if (tallyBtn) tallyBtn.classList.toggle('hidden', !isHost || gameState.phase !== 'DAY');
+        if (tallyBtn) {
+            tallyBtn.textContent = gameState.phase === 'DAY' ? 'HOST: Tally Votes & End Day' : 'HOST: End Night Early & Process Actions';
+            tallyBtn.classList.toggle('hidden', !isHost || gameState.dayNum === 0);
+        }
+
+        // Host Timer Display
+        const hostTimerContainer = document.getElementById('host-timer-container');
+        if (hostTimerContainer) {
+            hostTimerContainer.classList.toggle('hidden', !isHost || gameState.dayNum === 0);
+        }
 
         // Mafia Chat Visibility
         const mafiaChat = document.getElementById('mafia-chat');
@@ -656,7 +852,16 @@ function renderPlayerLists() {
 }
 
 function renderChat(channel, messages) {
-    const chatContainer = document.getElementById(channel === 'public' ? 'public-chat' : 'mafia-chat-messages');
+    let chatContainerId;
+    if (channel === 'public') {
+        chatContainerId = 'public-chat-messages';
+    } else if (channel === 'mafia') {
+        chatContainerId = 'mafia-chat-messages';
+    } else if (channel === 'lobby-public') {
+        chatContainerId = 'lobby-chat-messages';
+    }
+    
+    const chatContainer = document.getElementById(chatContainerId);
     if (!chatContainer) return;
     chatContainer.innerHTML = '';
 
@@ -674,6 +879,7 @@ function renderChat(channel, messages) {
             </div>
         `;
     });
+    // Ensure scrolling to the bottom for new messages
     chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
@@ -758,7 +964,7 @@ function renderGameLog() {
     const recentLog = [...(gameState.log || [])].reverse().slice(0, 5);
 
     recentLog.forEach(entry => {
-        const color = entry.type === 'lynch' ? 'text-red-400 font-bold' : 'text-white/70';
+        const color = entry.type === 'lynch' || entry.type === 'death' ? 'text-red-400 font-bold' : 'text-white/70';
         logContainer.innerHTML += `<p class="text-sm ${color}">${entry.message}</p>`;
     });
 }
@@ -773,7 +979,9 @@ window.advancePhase = advancePhase;
 
 window.submitNightAction = submitNightAction;
 window.submitVote = function () {
-    if (!selectedTargetId || gameState.phase !== 'DAY') return;
+    // Vote is submitted instantly on selection via selectVoteTarget, 
+    // this function is now just a placeholder/disabler
+    if (gameState.phase !== 'DAY') return;
     document.getElementById('submit-vote-btn').disabled = true;
     document.getElementById('submit-vote-btn').textContent = 'Vote Locked';
 }
@@ -782,6 +990,8 @@ window.leaveLobby = function () {
     // Simplified: In a real app, you'd remove the player from the array in Firestore
     lobbyCode = '';
     isHost = false;
+    // Clear timer when leaving lobby
+    if (phaseTimer) clearInterval(phaseTimer); phaseTimer = null;
     window.switchScreen('landing-screen');
 }
 
